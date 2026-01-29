@@ -29,7 +29,7 @@ If you are new to Scry, start with the sandbox and then use the prompt to guide 
 
 ## Prompts and skills
 
-- `CLAUDE.md` contains the base Scry prompt.
+- `CLAUDE.md` contains the base Scry prompt (generated from `src/api/src/routes/scry_prompts.rs` via `src/web/scripts/generate_scry_public_prompt.mjs`).
 - `skills/` contains subagent templates you can plug into your agent framework.
 
 ## Contributing

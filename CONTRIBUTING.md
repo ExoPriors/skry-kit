@@ -2,6 +2,8 @@
 
 Thanks for helping improve Scry workflows.
 
+Note: `CLAUDE.md` is generated from `src/api/src/routes/scry_prompts.rs` via `src/web/scripts/generate_scry_public_prompt.mjs`. Do not edit it directly.
+
 ## Adding a new skill
 
 1. Create a new folder under `skills/<skill-name>/`.

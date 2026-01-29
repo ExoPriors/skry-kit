@@ -1,0 +1,17 @@
+services:
+  scry:
+    build: .
+    image: skry-kit-sandbox:latest
+    working_dir: /workspace
+    environment:
+      HOME: /home/dev
+      EXOPRIORS_API_KEY: ${EXOPRIORS_API_KEY}
+      SCRY_PUBLIC_KEY: ${SCRY_PUBLIC_KEY}
+    volumes:
+      - ..:/workspace
+      - scry-home:/home/dev
+    stdin_open: true
+    tty: true
+
+volumes:
+  scry-home:

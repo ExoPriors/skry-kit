@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query_intent", "terms", "queries", "filters", "notes"],
+  "properties": {
+    "query_intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "terms": {
+      "type": "array",
+      "minItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["term", "weight", "type", "rationale"],
+        "properties": {
+          "term": {"type": "string", "minLength": 1},
+          "weight": {"type": "number", "minimum": 0, "maximum": 1},
+          "type": {
+            "type": "string",
+            "enum": ["core", "adjacent", "phrase", "acronym", "person", "org", "location", "method", "negation"]
+          },
+          "rationale": {"type": "string", "minLength": 1},
+          "variants": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    },
+    "queries": {
+      "type": "array",
+      "minItems": 5,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sources": {"type": "array", "items": {"type": "string"}},
+        "kinds": {"type": "array", "items": {"type": "string"}},
+        "time_range": {"type": "string"},
+        "language": {"type": "string"}
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}

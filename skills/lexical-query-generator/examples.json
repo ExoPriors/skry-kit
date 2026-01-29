@@ -1,0 +1,42 @@
+[
+  {
+    "query_intent": "Find serious discussions of civilizational refuge concepts and identify people or organizations that could be mobilized quickly to build or support them.",
+    "terms": [
+      {"term": "civilizational refuge", "weight": 1.0, "type": "phrase", "rationale": "Exact target phrase", "variants": ["civilizational refuges", "civilizational refuge plan"]},
+      {"term": "civilization resilience", "weight": 0.85, "type": "phrase", "rationale": "Common framing for continuity planning", "variants": ["civilizational resilience", "resilient civilization"]},
+      {"term": "existential risk refuge", "weight": 0.8, "type": "phrase", "rationale": "Ties refuges to x-risk framing"},
+      {"term": "catastrophe preparedness", "weight": 0.75, "type": "adjacent", "rationale": "Broader preparedness context"},
+      {"term": "continuity planning", "weight": 0.7, "type": "adjacent", "rationale": "Governance and infrastructure continuity"},
+      {"term": "safe haven", "weight": 0.6, "type": "adjacent", "rationale": "Synonym used in disaster contexts"},
+      {"term": "resilience hub", "weight": 0.55, "type": "phrase", "rationale": "Infrastructure language for refuges"},
+      {"term": "bunker", "weight": 0.45, "type": "adjacent", "rationale": "Colloquial term that may surface in discussions"},
+      {"term": "seed vault", "weight": 0.5, "type": "phrase", "rationale": "Related long-term resilience infrastructure"},
+      {"term": "rapid mobilization", "weight": 0.7, "type": "phrase", "rationale": "Explicitly requested in the prompt"},
+      {"term": "emergency response", "weight": 0.6, "type": "adjacent", "rationale": "Mobilization context"},
+      {"term": "logistics", "weight": 0.4, "type": "adjacent", "rationale": "Operational capability for mobilization"},
+      {"term": "mutual aid", "weight": 0.4, "type": "adjacent", "rationale": "Community mobilization framing"},
+      {"term": "ALLFED", "weight": 0.35, "type": "org", "rationale": "Known org in global catastrophe preparedness"},
+      {"term": "global catastrophic risk", "weight": 0.75, "type": "phrase", "rationale": "Common umbrella term for the space", "variants": ["GCR", "catastrophic risk"]}
+    ],
+    "queries": [
+      "\"civilizational refuge\"",
+      "\"civilizational resilience\" refuge",
+      "\"existential risk\" refuge",
+      "\"global catastrophic risk\" preparedness",
+      "\"continuity planning\" infrastructure",
+      "resilience hub disaster preparedness",
+      "safe haven catastrophe planning",
+      "rapid mobilization emergency response",
+      "\"seed vault\" resilience"
+    ],
+    "filters": {
+      "sources": ["lw", "af", "ea", "arxiv"],
+      "kinds": ["post", "paper", "comment"],
+      "time_range": "last 10 years"
+    },
+    "notes": [
+      "If the goal is to find individuals, add organization names and then collect authors from matched documents.",
+      "Consider splitting into two passes: (1) refuge/continuity concepts, (2) mobilization/response orgs." 
+    ]
+  }
+]

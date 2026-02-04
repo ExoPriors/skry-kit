@@ -37,7 +37,7 @@ Your purpose:
 
 **Surprising bits (fresh sessions):**
 - `/v1/scry/query` only accepts `Content-Type: text/plain` and the body is raw SQL (no JSON).
-- `scry.search()` returns BM25 `score` (higher is better); snippets are simple prefixes. Treat it as a candidate generator.
+- `scry.search()` is a **fast lexical candidate generator** (BM25). `score` is currently `NULL` (unscored) for speed/stability; order explicitly after joining (recency, semantic distance, etc.). If `kinds` is omitted, it defaults to a high-signal subset (posts/papers/documents/webpages/twitter_threads).
 - Row caps are enforced; `include_vectors=1` has a much lower cap and vectors are returned as placeholders.
 - Timeouts are adaptive; ceilings expand when usage is low and shrink under heavy load.
 - If you're unsure about columns or views, call `/v1/scry/schema` instead of guessing.
@@ -133,7 +133,7 @@ Constraints:
 - Embedding joins (<500K rows): ~5–20s
 - Complex aggregations (<2M rows): ~20–60s
 - Large scans (>5M rows): may timeout under load
-- `scry.search()` is capped at 100 rows; use `scry.search_exhaustive()` + pagination if completeness matters
+- `scry.search()` is capped at 100 rows; use `scry.search_ids()` (max 2000) or `scry.search_exhaustive()` + pagination if completeness matters
 - If a query times out: reduce sample size, use fewer embeddings, or pre-filter with `scry.search()`. For public keys, intersect small candidate lists client-side as a fallback.
 - For author aggregates, use `scry.mv_author_stats` instead of `COUNT(DISTINCT original_author)` on `scry.entities`.
 
@@ -368,6 +368,9 @@ The primary content view. Columns are coalesced from metadata for convenience.
 | original_author | TEXT | Author name/handle (may be NULL, especially tweets) |
 | original_timestamp | TIMESTAMPTZ | Publication date |
 | source | external_system | Platform origin. Cast `source::text` if needed. |
+| author_actor_id | UUID | Internal normalized author identity (may be NULL) |
+| parent_entity_id | UUID | Parent pointer for threaded items (e.g., comment reply chains) |
+| anchor_entity_id | UUID | Root subject pointer (e.g., comment → post; HN submission → crawled webpage) |
 | content_risk | TEXT | Risk flag for dangerous content (e.g., `dangerous` for high prompt-injection sources like Moltbook). |
 | metadata | JSONB | Source-specific fields (see below) |
 | created_at | TIMESTAMPTZ | Ingest timestamp |
@@ -395,13 +398,30 @@ The primary content view. Columns are coalesced from metadata for convenience.
 | twitter | `username`, `displayName`, `replyToUsername`, `likes`, `retweets`, `tweet_count` |
 | manifold | `contractId`, `contractSlug`, `contractQuestion`, `commentId`, `betAmount`, `betOutcome`, `likes` |
 | offshoreleaks | `node_id`, `node_type`, `jurisdiction`, `status`, `countries`, `country_codes`, `sourceID` |
+| substack (crawled_url) | `platform='substack'`, `substack_post_id`, `substack_publication_id`, `substack_type`, `substack_post_url` (comments), `handle`, `reaction_count` |
 
 **Filtering examples:**
 ```sql
-SELECT * FROM scry.entities WHERE source = 'hackernews' AND kind = 'comment' LIMIT 100;
-SELECT * FROM scry.entities WHERE source = 'lesswrong' AND kind = 'post' LIMIT 100;
-SELECT * FROM scry.entities WHERE source = 'lesswrong' AND is_af = true LIMIT 100;
-SELECT * FROM scry.entities WHERE source = 'arxiv' AND kind = 'paper' AND metadata->>'primary_category' = 'cs.AI' LIMIT 100;
+	SELECT * FROM scry.entities WHERE source = 'hackernews' AND kind = 'comment' LIMIT 100;
+	SELECT * FROM scry.entities WHERE source = 'lesswrong' AND kind = 'post' LIMIT 100;
+	SELECT * FROM scry.entities WHERE source = 'lesswrong' AND is_af = true LIMIT 100;
+	SELECT * FROM scry.entities WHERE source = 'arxiv' AND kind = 'paper' AND metadata->>'primary_category' = 'cs.AI' LIMIT 100;
+
+	-- Moltbook is searchable, but flagged as dangerous content (prompt-injection risk)
+	SELECT id, uri, kind, original_timestamp, content_risk
+	FROM scry.entities
+	WHERE source = 'moltbook'
+	ORDER BY original_timestamp DESC
+	LIMIT 100;
+
+	-- Thread navigation (no URL matching): all replies anchored to a post
+	SELECT c.id, c.original_author, c.original_timestamp, c.payload
+	FROM scry.entities p
+	JOIN scry.entities c ON c.anchor_entity_id = p.id
+	WHERE p.kind = 'post' AND p.uri ILIKE '%substack%'
+  AND c.kind = 'comment'
+ORDER BY c.original_timestamp ASC
+LIMIT 200;
 ```
 
 ### 2.2 scry.embeddings (vectors)
@@ -504,11 +524,17 @@ Use these for semantic search within specific corpora. They include doc-level em
 | `scry.mv_unjournal_posts` | Unjournal (PubPub) posts with Voyage-4 embeddings. |
 | `scry.mv_hackernews_posts` | HN submissions with embeddings. Adds `hn_id`, `num_comments`. |
 | `scry.mv_posts` | Cross-source posts with doc-level embeddings (filter by `source`). |
+| `scry.mv_forum_posts` | Convenience corpus: major forums + EIPs/ERCs (GitHub). Adds `platform` (lesswrong/eaforum/hackernews/discourse/github). |
+| `scry.mv_ethereum_posts` | Convenience slice: all Ethereum discourse (EthResearch, Magicians, OpenZeppelin, Devcon, EIPs/ERCs). |
 | `scry.mv_high_score_posts` | Cross-source posts with `score >= 10` + doc-level embeddings (high-signal subset). |
 | `scry.mv_arxiv_papers` | arXiv papers. Adds `category`, `arxiv_id`. `embedding_voyage4` may be NULL. |
 | `scry.mv_papers` | Cross-source papers with doc-level embeddings + `primary_category` when available. |
 | `scry.mv_twitter_threads` | Twitter threads. Adds `tweet_count`, `total_likes`, `preview`. |
 | `scry.mv_af_posts` | Alignment Forum posts only (LW with `af=true`). Includes full `payload`. |
+| `scry.mv_substack_posts` | Substack posts (including custom domains) with doc-level embeddings + `publication_host` + Substack IDs when available. |
+| `scry.mv_substack_comments` | Substack comments with thread pointers (`anchor_entity_id`, `parent_entity_id`) and optional embeddings. |
+| `scry.mv_substack_publications` | Substack publication rollups for faceting (`publication_host`, counts, first/last activity). |
+| `scry.mv_blogosphere_posts` | Convenience “blogs + Substack” corpus for semantic search across essay-style sources. |
 | `scry.mv_high_karma_comments` | LW/EAF comments with score>10. Columns: `entity_id`, `source`, `base_score`, `post_id`, `is_af`, `preview`, `embedding_voyage4` |
 | `scry.mv_lesswrong_comments` | All LW comments (embedding_voyage4 may be NULL) |
 | `scry.mv_eaforum_comments` | All EAF comments (embedding_voyage4 may be NULL) |
@@ -746,7 +772,12 @@ Note: Use ILIKE patterns for author lookup (see Gotchas section on author fragme
 
 ## 4. Lexical Search (pg_search / BM25)
 
-The corpus has BM25 full-text search via ParadeDB's pg_search extension. `scry.search()` matches across `payload`, `title`, and `original_author` (it does **not** index JSON metadata fields like `metadata->>'username'`). It returns BM25 `score` (higher is better) and orders by score; snippets are simple payload prefixes (no highlight). Use semantic rerank or explicit SQL ordering when you need a different ranking.
+The corpus has BM25 full-text search via ParadeDB's pg_search extension. `scry.search()` matches across `payload`, `title`, and `original_author` (it does **not** index JSON metadata fields like `metadata->>'username'`).
+
+`scry.search()` is intentionally tuned as a **fast, stable candidate generator**:
+- `score` is currently `NULL` (unscored) for speed/stability under load.
+- Results are **not guaranteed to be ranked**; order explicitly after joining (e.g., by `created_at`, `original_timestamp`, or semantic distance).
+- If `kinds` is omitted (`NULL`), it defaults to a high-signal subset: `post`, `paper`, `document`, `webpage`, `twitter_thread`. If you want tweets/comments/etc, pass them explicitly in `kinds`.
 
 ### 4.1 The Easy Way: `scry.search()`
 
@@ -775,12 +806,38 @@ SELECT * FROM scry.search('deceptive alignment', limit_n => 50);
 scry.search(
   query_text text,
   mode text DEFAULT 'auto',       -- 'auto' | 'and' | 'or' | 'phrase' | 'fuzzy'
-    kinds text[] DEFAULT NULL,      -- filter: ARRAY['post', 'comment', 'paper', 'tweet', 'twitter_thread', 'text']
+  kinds text[] DEFAULT NULL,      -- filter: if NULL defaults to ['post','paper','document','webpage','twitter_thread']
   limit_n int DEFAULT 20          -- max 100
 ) RETURNS TABLE (id, score, snippet, uri, kind, original_author, title, original_timestamp)
 ```
 
-**Completeness warning**: `scry.search()` hard-caps `limit_n` at 100. Use `scry.search_exhaustive()` with pagination if missing results is worse than waiting.
+**Completeness warning**: `scry.search()` hard-caps `limit_n` at 100. If you need more candidates, use `scry.search_ids()` (IDs-only, max 2000) or `scry.search_exhaustive()` with pagination.
+
+### 4.1b IDs-only candidates: `scry.search_ids()`
+
+Use this when you want a larger lexical candidate set and will filter/order with normal SQL (e.g., by `source`, `original_timestamp`, or semantic distance).
+
+```sql
+scry.search_ids(
+  query_text text,
+  mode text DEFAULT 'auto',
+  kinds text[] DEFAULT NULL,
+  limit_n int DEFAULT 200   -- max 2000
+) RETURNS TABLE (id)
+```
+
+Example: search → filter by source/date → then join for details:
+```sql
+WITH c AS (
+  SELECT id FROM scry.search_ids('mechanistic interpretability', kinds => ARRAY['paper'], limit_n => 1000)
+)
+SELECT e.id, e.uri, e.title, e.original_author, e.original_timestamp
+FROM c
+JOIN scry.entities e ON e.id = c.id
+WHERE e.source = 'arxiv'
+ORDER BY e.original_timestamp DESC
+LIMIT 50;
+```
 
 ```sql
 scry.search_exhaustive(
@@ -801,7 +858,7 @@ scry.search_exhaustive(
 
 **Important**: Snippets are payload prefixes for all modes right now (no highlighted snippets).
 
-**Result schema note**: `scry.search()` returns a flattened row type (no `metadata` or `payload` columns). `score` is BM25 (higher is better). `original_author` may be NULL (especially tweets). If you need metadata/payload, join by `id`:
+**Result schema note**: `scry.search()` returns a flattened row type (no `metadata` or `payload` columns). `score` is currently `NULL` (unscored). `original_author` may be NULL (especially tweets). If you need metadata/payload, join by `id`:
 ```sql
 SELECT s.*, e.metadata, e.payload
 FROM scry.search('mesa optimization', kinds => ARRAY['post'], limit_n => 50) s
@@ -815,7 +872,7 @@ Combine keyword precision with semantic similarity:
 ```sql
 -- Step 1: Lexical candidates (fast, precise)
 WITH candidates AS (
-    SELECT id FROM scry.search('interpretability circuits', limit_n => 100)
+    SELECT id FROM scry.search_ids('interpretability circuits', limit_n => 800)
 )
 -- Step 2: Re-rank by semantic similarity
 SELECT e.uri, e.original_author, emb.embedding_voyage4 <=> @mech_interp AS distance
@@ -1088,6 +1145,8 @@ When you need fine control or are teaching the user how Scry works, use the API 
 
 **Search completeness**: `scry.search()` is capped at 100 rows. For completeness-sensitive runs, use `scry.search_exhaustive()` with pagination or raw BM25 operators on `scry.entities` (slower / higher cost).
 
+**Default kinds**: If you omit `kinds` in `scry.search()` / `scry.search_ids()` / `scry.search_exhaustive()`, it defaults to a high-signal subset (`post`, `paper`, `document`, `webpage`, `twitter_thread`). If you need tweets/comments, pass them explicitly: `kinds => ARRAY['tweet', 'comment', ...]`.
+
 **Coverage uncertainty**: Empty or sparse results are not evidence of absence. State the search scope (sources/kinds/date range, search mode, alias list) and uncertainty explicitly.
 
 **Table names**: There are no `items`, `posts`, `hn_posts`, or `hackernews_posts` tables. Use `scry.entities` (with `source` + `kind`) or `scry.mv_hackernews_posts` for HN submissions.
@@ -1118,12 +1177,14 @@ The materialized views filter to substantive content:
 - Use materialized views for fast, high-signal starting points:
   - `scry.mv_lesswrong_posts` — LessWrong posts (embeddings)
   - `scry.mv_eaforum_posts` — EA Forum posts (embeddings)
-  - `scry.mv_unjournal_posts` — Unjournal (PubPub) posts (Voyage-4 embeddings)
-  - `scry.mv_hackernews_posts` — HN submissions (embeddings)
-  - `scry.mv_posts` — Cross-source posts (embeddings; filter by `source`)
-  - `scry.mv_high_score_posts` — Cross-source high-signal posts (`score >= 10`, embeddings)
-  - `scry.mv_high_karma_comments` (~108K) — high-karma comments (LW/EAF, filter by `source`)
-  - `scry.mv_lesswrong_comments` — LW comments (all; embedding_voyage4 may be NULL)
+	  - `scry.mv_unjournal_posts` — Unjournal (PubPub) posts (Voyage-4 embeddings)
+	  - `scry.mv_hackernews_posts` — HN submissions (embeddings)
+	  - `scry.mv_posts` — Cross-source posts (embeddings; filter by `source`)
+	  - `scry.mv_forum_posts` — Major forums + EIPs/ERCs (embeddings; adds `platform`)
+	  - `scry.mv_ethereum_posts` — Ethereum discourse slice (embeddings; adds `platform`)
+	  - `scry.mv_high_score_posts` — Cross-source high-signal posts (`score >= 10`, embeddings)
+	  - `scry.mv_high_karma_comments` (~108K) — high-karma comments (LW/EAF, filter by `source`)
+	  - `scry.mv_lesswrong_comments` — LW comments (all; embedding_voyage4 may be NULL)
   - `scry.mv_eaforum_comments` — EAF comments (all; embedding_voyage4 may be NULL)
   - `scry.mv_af_posts` (~4K) — Alignment Forum posts
   - `scry.mv_arxiv_papers` (~2.9M) — arXiv papers (filter `WHERE embedding_voyage4 IS NOT NULL` for semantic search)
@@ -1131,28 +1192,24 @@ The materialized views filter to substantive content:
   - `scry.mv_twitter_threads` (~1M) — Twitter threads
 - Use `scry.entities` + `scry.embeddings` when you need exhaustive coverage.
 - HN comments: `scry.entities` with `source = 'hackernews'` and `kind = 'comment'`.
-- Substack newsletters + comments: filter `metadata->>'platform' = 'substack'` (posts = `kind = 'post'`, comments = `kind = 'comment'`).
+- Substack newsletters + comments: use `scry.mv_substack_posts`, `scry.mv_substack_comments`, and `scry.mv_substack_publications` (facet by `publication_host`).
 - Popular Substack sources (non-exhaustive): Astral Codex Ten, 80,000 Hours, Noahpinion, Slow Boring, Silver Bulletin, The Zvi.
 - Substack coverage counts live in `/v1/stats` → `materialized_views` (`substack_publications`, `substack_posts`, `substack_comments`).
 - Paywalled Substack posts often include only the public preview text.
 
-**Substack quick start** (find top posts, then dive into comments):
+**Substack quick start** (find posts, then dive into comment threads):
 ```sql
-SELECT uri, title, original_author, original_timestamp
-FROM scry.entities
-WHERE metadata->>'platform' = 'substack'
-  AND kind = 'post'
-  AND (uri ILIKE 'https://%.substack.com/%' OR uri ILIKE 'https://%.com/%')
+SELECT entity_id, uri, title, original_author, original_timestamp, publication_host
+FROM scry.mv_substack_posts
 ORDER BY original_timestamp DESC
 LIMIT 50;
 ```
 ```sql
-SELECT e.uri, e.original_author, scry.preview_text(e.payload, 300) AS excerpt
-FROM scry.entities e
-WHERE e.metadata->>'platform' = 'substack'
-  AND e.kind = 'comment'
-  AND e.metadata->>'substack_post_url' = 'https://example.substack.com/p/example'
-ORDER BY e.original_timestamp DESC
+-- Replace $POST_ID with a UUID from mv_substack_posts.entity_id
+SELECT c.uri, c.original_author, c.original_timestamp, c.preview, c.reaction_count, c.children_count
+FROM scry.mv_substack_comments c
+WHERE c.anchor_entity_id = $POST_ID
+ORDER BY c.original_timestamp ASC
 LIMIT 200;
 ```
 

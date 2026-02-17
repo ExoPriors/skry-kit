@@ -281,10 +281,10 @@ Requirements:
 **Model tiers (set `model_tier` or `model`):**
 - `fast` → `openai/gpt-5-mini` (cheapest, good for coarse sorting)
 - `balanced` → `openai/gpt-5.2-chat` (best cost/quality default)
-- `quality` → `anthropic/claude-opus-4.5` (most accurate, highest cost)
+- `quality` → `anthropic/claude-opus-4.6` (most accurate, highest cost)
 - Optional: `model_tier: "kimi"` or `model: "moonshotai/kimi-k2-0905"` for a strong alternative
 
-**Allowed models**: `openai/gpt-5-mini`, `openai/gpt-5.2-chat`, `moonshotai/kimi-k2-0905`, `anthropic/claude-opus-4.5`
+**Allowed models**: `openai/gpt-5-mini`, `openai/gpt-5.2-chat`, `moonshotai/kimi-k2-0905`, `anthropic/claude-opus-4.6`
 
 **Community memoization (default for canonical attributes):**
 - Canonical attribute IDs: `clarity`, `technical_depth`, `insight`

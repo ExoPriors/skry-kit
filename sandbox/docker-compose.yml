@@ -5,7 +5,7 @@ services:
     working_dir: /workspace
     environment:
       HOME: /home/dev
-      EXOPRIORS_API_KEY: ${EXOPRIORS_API_KEY}
+      SCRY_API_KEY: ${SCRY_API_KEY}
       SCRY_PUBLIC_KEY: ${SCRY_PUBLIC_KEY}
     volumes:
       - ..:/workspace

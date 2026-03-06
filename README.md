@@ -12,7 +12,7 @@ If you are new to Scry, start with the sandbox and then use the prompt to guide 
 
 ## Quickstart
 
-1. Copy `.env.example` to `.env` and set `EXOPRIORS_API_KEY` or `SCRY_PUBLIC_KEY`.
+1. Copy `.env.example` to `.env` and set `SCRY_API_KEY` or `SCRY_PUBLIC_KEY`.
 2. Run the sandbox:
    ```bash
    cd sandbox

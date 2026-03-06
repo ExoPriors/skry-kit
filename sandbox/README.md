@@ -20,5 +20,5 @@ curl -X POST https://api.exopriors.com/v1/scry/query \
 
 ## Notes
 
-- Set `EXOPRIORS_API_KEY` or `SCRY_PUBLIC_KEY` in `../.env`.
+- Set `SCRY_API_KEY` or `SCRY_PUBLIC_KEY` in `../.env`.
 - This container is non-root and persists `$HOME` in a named volume.
